@@ -64,6 +64,8 @@ async def generate_metadata(filepath: str, metadata_path: str):
     return data
 
 
+# TODO in the future we could run only what is needed for the requested metadata (if file already exists, just load it to a dict, modify with new/updated stuff, overwrite)
+# basically lazy generation of fields then caching into the JSON
 async def some_metadata(full_path: str, desired_fields=False):
     """
     if desired fields isn't given as a list all fields will be returned
@@ -80,7 +82,7 @@ async def some_metadata(full_path: str, desired_fields=False):
         data = await generate_metadata(full_path, metadata_path)
     elif os.stat(metadata_path).st_mtime < file_stats['mtime']/1000:  # metadata is older than file
         data = await generate_metadata(full_path, metadata_path)
-    else:  # metadata already exists and is up to date  
+    else:  # metadata already exists and is up to date
         async with aiofiles.open(metadata_path, mode='r') as f:
             # make metadata fields local variables
             data = await f.read()
