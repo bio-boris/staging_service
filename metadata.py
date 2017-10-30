@@ -10,7 +10,7 @@ decoder = JSONDecoder()
 encoder = JSONEncoder()
 
 
-async def stat_data(full_path: str, isFolder=False) -> dict:
+async def stat_data(full_path: str) -> dict:
     file_stats = os.stat(full_path)
     filename = os.path.basename(full_path)
     return {
@@ -18,7 +18,7 @@ async def stat_data(full_path: str, isFolder=False) -> dict:
         'path': full_path,
         'mtime': int(file_stats.st_mtime*1000),  # given in seconds, want ms
         'size': file_stats.st_size,
-        'isFolder': isFolder
+        'isFolder': os.path.isdir(full_path)
     }
 
 
@@ -64,6 +64,9 @@ async def generate_metadata(filepath: str, metadata_path: str):
     return data
 
 
+
+# fields which only require a call to stat data to get
+stat_fields = set(['name', 'path', 'mtime', 'size', 'isFolder'])
 # TODO in the future we could run only what is needed for the requested metadata (if file already exists, just load it to a dict, modify with new/updated stuff, overwrite)
 # basically lazy generation of fields then caching into the JSON
 async def some_metadata(full_path: str, desired_fields=False):
@@ -74,19 +77,21 @@ async def some_metadata(full_path: str, desired_fields=False):
     md5, lineCount, head, tail, name, path, mtime, size, isFolder
     """
     user_path = full_path[len(DATA_DIR):]
-    if os.path.isdir(full_path):
-        return {'error': 'cannot determine metadata for directory'}
     file_stats = await stat_data(full_path)
-    metadata_path = os.path.join(META_DIR, user_path+'.json')  # TODO this is a shitty way to store all the metadata
-    if not os.path.exists(metadata_path):
-        data = await generate_metadata(full_path, metadata_path)
-    elif os.stat(metadata_path).st_mtime < file_stats['mtime']/1000:  # metadata is older than file
-        data = await generate_metadata(full_path, metadata_path)
-    else:  # metadata already exists and is up to date
-        async with aiofiles.open(metadata_path, mode='r') as f:
-            # make metadata fields local variables
-            data = await f.read()
-            data = decoder.decode(data)
+    if file_stats['isFolder'] or len(set(desired_fields)-stat_fields) == 0:
+        # short circuit here to only request stat data
+        data = {}
+    else:
+        metadata_path = os.path.join(META_DIR, user_path+'.json')  # TODO this is a shitty way to store all the metadata
+        if not os.path.exists(metadata_path):
+            data = await generate_metadata(full_path, metadata_path)
+        elif os.stat(metadata_path).st_mtime < file_stats['mtime']/1000:  # metadata is older than file
+            data = await generate_metadata(full_path, metadata_path)
+        else:  # metadata already exists and is up to date
+            async with aiofiles.open(metadata_path, mode='r') as f:
+                # make metadata fields local variables
+                data = await f.read()
+                data = decoder.decode(data)
     data = {**data, **file_stats}
     if not desired_fields:
         return data
